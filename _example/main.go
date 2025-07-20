@@ -49,11 +49,11 @@ func main() {
 
 	testName := "_acme-challenge.home"
 	hasTestName := false
-	var testRecord libdns.Record = libdns.Record{}
+	var testRecord libdns.Record = libdns.RR{}
 
 	for _, record := range records {
-		fmt.Printf("%s (.%s): %s, %s\n", record.Name, zone, record.Value, record.Type)
-		if record.Name == testName {
+		fmt.Printf("%s (.%s): %s, %s\n", record.RR().Name, zone, record.RR().Data, record.RR().Type)
+		if record.RR().Name == testName {
 			hasTestName = true
 			testRecord = record
 		}
@@ -61,11 +61,11 @@ func main() {
 
 	if !hasTestName {
 		appendedRecords, err := provider.AppendRecords(context.TODO(), zone, []libdns.Record{
-			libdns.Record{
-				Type:  "TXT",
-				Name:  testName,
-				TTL:   0,
-				Value: "test_add_record_value",
+			libdns.RR{
+				Type: "TXT",
+				Name: testName,
+				TTL:  0,
+				Data: "test_add_record_value",
 			},
 		})
 
@@ -75,8 +75,9 @@ func main() {
 
 		fmt.Println("appendedRecords")
 		fmt.Println(appendedRecords)
-	} else if testRecord.Value == "test_add_record_value" {
-		testRecord.Value = "test_update_record_value"
+	} else if testRecord.RR().Data == "test_add_record_value" {
+		testRecord := testRecord.RR()
+		testRecord.Data = "test_update_record_value"
 		updatedRecords, err := provider.SetRecords(context.TODO(), zone, []libdns.Record{
 			testRecord,
 		})

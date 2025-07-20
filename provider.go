@@ -78,17 +78,14 @@ func (p *Provider) GetRecords(ctx context.Context, zone string) ([]libdns.Record
 		if err != nil {
 			return nil, err
 		}
-		priority, err := strconv.Atoi(r.Priority)
-		if err != nil {
-			priority = 0
-		}
-		records = append(records, libdns.Record{
-			ID:       r.Id,
-			Type:     r.Type,
-			Name:     r.Host,
-			Value:    r.Rdata,
-			TTL:      time.Duration(ttl) * time.Second,
-			Priority: uint(priority),
+		records = append(records, DnsRecord{
+			Id: r.Id,
+			Record: libdns.RR{
+				Type: r.Type,
+				Name: r.Host,
+				Data: r.Rdata,
+				TTL:  time.Duration(ttl) * time.Second,
+			},
 		})
 	}
 
@@ -106,24 +103,26 @@ func (p *Provider) AppendRecords(ctx context.Context, zone string, records []lib
 	for _, record := range records {
 		client := http.Client{}
 
-		if record.TTL < time.Duration(300)*time.Second {
-			record.TTL = time.Duration(300) * time.Second
+		var ttl time.Duration
+		if record.RR().TTL < time.Duration(300)*time.Second {
+			ttl = time.Duration(300) * time.Second
+		} else {
+			ttl = record.RR().TTL
 		}
 
 		reqData, err := json.Marshal(AddEntry{
-			Domain:   zone,
-			Host:     record.Name,
-			TTL:      int(record.TTL.Seconds()),
-			Priority: int(record.Priority),
-			Type:     record.Type,
-			Rdata:    record.Value,
+			Domain: zone,
+			Host:   record.RR().Name,
+			TTL:    int(ttl.Seconds()),
+			Type:   record.RR().Type,
+			Rdata:  record.RR().Data,
 		})
 		if err != nil {
 			return nil, err
 		}
 
 		req, err := http.NewRequest(http.MethodPut, fmt.Sprintf("%s/zones/records/add/%s/%s",
-			p.getApiUrl(), zone, record.Type), bytes.NewBuffer(reqData))
+			p.getApiUrl(), zone, record.RR().Type), bytes.NewBuffer(reqData))
 		if err != nil {
 			return nil, err
 		}
@@ -138,7 +137,7 @@ func (p *Provider) AppendRecords(ctx context.Context, zone string, records []lib
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusCreated {
-			return nil, fmt.Errorf("could not add record [%s] for domain [%s]: HTTP Status: %s", record.Name, zone, resp.Status)
+			return nil, fmt.Errorf("could not add record [%s] for domain [%s]: HTTP Status: %s", record.RR().Name, zone, resp.Status)
 		}
 
 		_, err = io.ReadAll(resp.Body)
@@ -170,25 +169,29 @@ func (p *Provider) SetRecords(ctx context.Context, zone string, records []libdns
 	for _, record := range records {
 		updated := false
 		for _, currentRecord := range currentRecords {
-			if currentRecord.Name == record.Name && currentRecord.Type == record.Type {
+			currentRecord := currentRecord.(DnsRecord)
+			if currentRecord.Record.Name == record.RR().Name && currentRecord.Record.Type == record.RR().Type {
 				client := http.Client{}
 
-				if record.TTL < time.Duration(300)*time.Second {
-					record.TTL = time.Duration(300) * time.Second
+				var ttl time.Duration
+				if record.RR().TTL < time.Duration(300)*time.Second {
+					ttl = time.Duration(300) * time.Second
+				} else {
+					ttl = record.RR().TTL
 				}
 
 				reqData, err := json.Marshal(UpdateEntry{
-					Host:  record.Name,
-					TTL:   int(record.TTL.Seconds()),
-					Type:  record.Type,
-					Rdata: record.Value,
+					Host:  record.RR().Name,
+					TTL:   int(ttl.Seconds()),
+					Type:  record.RR().Type,
+					Rdata: record.RR().Data,
 				})
 				if err != nil {
 					return nil, err
 				}
 
 				req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/zones/records/%s",
-					p.getApiUrl(), currentRecord.ID), bytes.NewBuffer(reqData))
+					p.getApiUrl(), currentRecord.Id), bytes.NewBuffer(reqData))
 				if err != nil {
 					return nil, err
 				}
@@ -244,11 +247,12 @@ func (p *Provider) DeleteRecords(ctx context.Context, zone string, records []lib
 	for _, record := range records {
 
 		for _, currentRecord := range currentRecords {
-			if currentRecord.Name == record.Name && currentRecord.Type == record.Type {
+			currentRecord := currentRecord.(DnsRecord)
+			if currentRecord.Record.Name == record.RR().Name && currentRecord.Record.Type == record.RR().Type {
 				client := http.Client{}
 
 				req, err := http.NewRequest(http.MethodDelete, fmt.Sprintf("%s/zones/records/%s/%s",
-					p.getApiUrl(), zone, currentRecord.ID), nil)
+					p.getApiUrl(), zone, currentRecord.Id), nil)
 				if err != nil {
 					return nil, err
 				}
